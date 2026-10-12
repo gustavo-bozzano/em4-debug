@@ -1,0 +1,3 @@
+LIBRARY em4_debug
+EXPORTS
+    EM4PluginInit

@@ -1,0 +1,16 @@
+# Local build output and compiler caches
+/build/
+/zig-cache/
+/.zig-cache/
+
+# Local game logs and installer state
+*.log
+install-manifest.json
+
+# Editor and OS files
+.vs/
+.vscode/
+*.user
+*.suo
+Thumbs.db
+Desktop.ini

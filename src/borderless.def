@@ -1,0 +1,3 @@
+LIBRARY em4_borderless
+EXPORTS
+    EM4PluginInit
