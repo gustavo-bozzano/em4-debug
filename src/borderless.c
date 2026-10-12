@@ -11,6 +11,25 @@ static WINDOWPLACEMENT original_placement;
 static RECT original_rect;
 static BOOL changed;
 
+static void recover_minimized_window(HWND hwnd) {
+    WINDOWPLACEMENT placement;
+    if (!hwnd || !IsIconic(hwnd)) return;
+    placement.length = sizeof(placement);
+    if (!GetWindowPlacement(hwnd, &placement)) {
+        host->log("borderless", "Could not read minimized window placement");
+        return;
+    }
+    placement.showCmd = SW_SHOWNORMAL;
+    if (!SetWindowPlacement(hwnd, &placement)) {
+        host->log("borderless", "Could not restore minimized window placement");
+        return;
+    }
+    ShowWindow(hwnd, SW_SHOW);
+    SetForegroundWindow(hwnd);
+    host->log("borderless", IsIconic(hwnd) ?
+        "Window recovery failed" : "Minimized game window recovered");
+}
+
 static void log_window_state(HWND hwnd) {
     RECT rect;
     char message[160];
@@ -91,18 +110,26 @@ static void toggle_window(HWND hwnd) {
 
 static DWORD WINAPI hotkey_worker(LPVOID unused) {
     BOOL last_down = FALSE;
+    BOOL last_recover_down = FALSE;
     (void)unused;
     for (;;) {
         HWND hwnd = host->get_game_window();
         DWORD pid = 0;
         BOOL down = (GetAsyncKeyState(VK_F11) & 0x8000) != 0;
+        BOOL recover_down = down &&
+            (GetAsyncKeyState(VK_CONTROL) & 0x8000) &&
+            (GetAsyncKeyState(VK_SHIFT) & 0x8000);
         GetWindowThreadProcessId(GetForegroundWindow(), &pid);
         if (changed && hwnd != altered_window) changed = FALSE;
-        if (down && !last_down && pid == GetCurrentProcessId() && hwnd) {
+        if (recover_down && !last_recover_down && hwnd)
+            recover_minimized_window(hwnd);
+        else if (down && !last_down && !recover_down &&
+                 pid == GetCurrentProcessId() && hwnd) {
             if (changed) restore_window();
             else toggle_window(hwnd);
         }
         last_down = down;
+        last_recover_down = recover_down;
         Sleep(35);
     }
 }
@@ -116,6 +143,6 @@ __declspec(dllexport) BOOL WINAPI EM4PluginInit(const EM4HostAPI *api) {
     worker = CreateThread(NULL, 0, hotkey_worker, NULL, 0, NULL);
     if (!worker) return FALSE;
     CloseHandle(worker);
-    host->log("borderless", "Press F11 to toggle the current window mode");
+    host->log("borderless", "F11 toggles window mode; Ctrl+Shift+F11 restores a minimized game");
     return TRUE;
 }

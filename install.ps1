@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$GamePath,
     [switch]$Uninstall,
-    [switch]$UpgradeDebug
+    [switch]$UpgradeDebug,
+    [switch]$UpgradeBorderless
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,7 +22,10 @@ $reloadTemplate = Join-Path $PSScriptRoot 'examples\reload_target.txt'
 
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Em4.exe was not found in the specified directory.' }
 if (Get-Process Em4 -ErrorAction SilentlyContinue) { throw 'Close the game before installing or uninstalling.' }
-if ($Uninstall -and $UpgradeDebug) { throw 'Choose either -Uninstall or -UpgradeDebug.' }
+if ([int][bool]$Uninstall + [int][bool]$UpgradeDebug +
+    [int][bool]$UpgradeBorderless -gt 1) {
+    throw 'Choose only one of -Uninstall, -UpgradeDebug, or -UpgradeBorderless.'
+}
 
 if ($Uninstall) {
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
@@ -56,7 +60,7 @@ if (-not (Test-Path -LiteralPath $sourceProxy -PathType Leaf) -or
     -not (Test-Path -LiteralPath $sourceDebug -PathType Leaf)) {
     throw 'Built DLLs were not found in the build directory. Run build.ps1 first.'
 }
-if ($UpgradeDebug) {
+if ($UpgradeDebug -or $UpgradeBorderless) {
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw 'Installation manifest not found. Upgrade stopped.'
     }
@@ -72,36 +76,40 @@ if ($UpgradeDebug) {
             throw "Installed file is missing or changed: $($entry.Path). Upgrade stopped."
         }
     }
-    $newHash = (Get-FileHash -LiteralPath $sourceDebug -Algorithm SHA256).Hash
-    if ($newHash -eq $manifest.debug_sha256) {
-        if (-not (Test-Path -LiteralPath $reloadTarget)) {
+    $target = if ($UpgradeDebug) { $debug } else { $plugin }
+    $source = if ($UpgradeDebug) { $sourceDebug } else { $sourcePlugin }
+    $hashProperty = if ($UpgradeDebug) { 'debug_sha256' } else { 'plugin_sha256' }
+    $label = if ($UpgradeDebug) { 'Debug' } else { 'Borderless' }
+    $newHash = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+    if ($newHash -eq $manifest.$hashProperty) {
+        if ($UpgradeDebug -and -not (Test-Path -LiteralPath $reloadTarget)) {
             Copy-Item -LiteralPath $reloadTemplate -Destination $reloadTarget
         }
-        Write-Host 'The installed debug DLL already matches this build.'
+        Write-Host "The installed $label DLL already matches this build."
         return
     }
-    $staged = "$debug.new"
-    $backup = "$debug.pre-upgrade.bak"
+    $staged = "$target.new"
+    $backup = "$target.pre-upgrade.bak"
     if ((Test-Path -LiteralPath $staged) -or (Test-Path -LiteralPath $backup)) {
         throw 'A previous upgrade staging file exists. Upgrade stopped.'
     }
     $removeBackup = $false
     try {
-        Copy-Item -LiteralPath $sourceDebug -Destination $staged
-        Copy-Item -LiteralPath $debug -Destination $backup
+        Copy-Item -LiteralPath $source -Destination $staged
+        Copy-Item -LiteralPath $target -Destination $backup
         if ((Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash -ne $newHash) {
-            throw 'Staged debug DLL hash mismatch.'
+            throw "Staged $label DLL hash mismatch."
         }
-        Copy-Item -LiteralPath $staged -Destination $debug -Force
-        if ((Get-FileHash -LiteralPath $debug -Algorithm SHA256).Hash -ne $newHash) {
-            throw 'Installed debug DLL hash mismatch.'
+        Copy-Item -LiteralPath $staged -Destination $target -Force
+        if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $newHash) {
+            throw "Installed $label DLL hash mismatch."
         }
-        $manifest.debug_sha256 = $newHash
+        $manifest.$hashProperty = $newHash
         $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
         $removeBackup = $true
     } catch {
         if (Test-Path -LiteralPath $backup) {
-            Copy-Item -LiteralPath $backup -Destination $debug -Force
+            Copy-Item -LiteralPath $backup -Destination $target -Force
             Set-Content -LiteralPath $manifestPath -Value $manifestText -Encoding UTF8
             $removeBackup = $true
         }
@@ -112,10 +120,10 @@ if ($UpgradeDebug) {
             Remove-Item -LiteralPath $backup
         }
     }
-    if (-not (Test-Path -LiteralPath $reloadTarget)) {
+    if ($UpgradeDebug -and -not (Test-Path -LiteralPath $reloadTarget)) {
         Copy-Item -LiteralPath $reloadTemplate -Destination $reloadTarget
     }
-    Write-Host 'Debug DLL upgraded. The other installed DLLs were preserved.'
+    Write-Host "$label DLL upgraded. The other installed DLLs were preserved."
     return
 }
 if (Test-Path -LiteralPath $proxy) {

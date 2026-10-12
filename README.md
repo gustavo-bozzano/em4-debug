@@ -13,9 +13,12 @@ An experimental native plugin package for **911 First Responders / Emergency 4**
 | **F9** | Cycle through Overview, Timing, Graphics, Logs, and Hot Reload. |
 | **F10** | Show or hide the `EM4 DEBUG` menu. |
 | **F11** | Toggle the game window. From fullscreen, it opens a centered window at 80% of the monitor size. From a normal window, it fills the monitor without borders. Press F11 again to restore the original state. |
+| **Ctrl + Shift + F11** | Restore and focus the game if it remains minimized after switching to a texture editor or another app. This shortcut works while another app has focus. |
 | **Page Up / Page Down** | Scroll through the selected log. **End** returns to the newest entries. |
 
 The menu appears automatically when the game starts. Loader and plugin messages are written to `EM4Plugins\em4_plugins.log` in the game directory.
+
+Some legacy fullscreen sessions remain minimized after switching to another app. Press **Ctrl + Shift + F11** to recover the existing game window without restarting or losing the current session.
 
 The Overview page shows FPS, average and 95th-percentile frame time, the worst recent frame, CPU use, working and private RAM, process handles, viewport size, window style, and uptime. CPU use is normalized against all logical processors. The Timing page includes a 120-frame graph. The Graphics page shows the OpenGL vendor, renderer, version, maximum texture size, depth bits, and pixel format.
 
@@ -66,6 +69,14 @@ To update only the debug menu in an existing installation managed by this script
 ```
 
 The upgrade verifies the current installation against its manifest, stages the new debug DLL, and updates its recorded hash. It leaves the loader and F11 plugin in place.
+
+To update only the window and recovery shortcuts, close the game and run:
+
+```powershell
+& .\install.ps1 -GamePath 'C:\path\to\911 First Responders' -UpgradeBorderless
+```
+
+This checks the recorded hashes, replaces only `em4_borderless.dll`, and keeps the loader and debug menu installed.
 
 To remove the files installed by this script:
 
