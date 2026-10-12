@@ -54,7 +54,7 @@ static char game_issues[LOG_CAPACITY][LOG_WIDTH];
 static char plugin_issues[LOG_CAPACITY][LOG_WIDTH];
 static unsigned game_line_count, plugin_line_count;
 static unsigned game_issue_count, plugin_issue_count;
-static char status_text[100] = "F9 pages  F10 hide  F6 snapshot";
+static char status_text[100] = "Ctrl+F10 pages  F10 hide  F6 snapshot";
 static char gl_vendor[100], gl_renderer[100], gl_version[100];
 static GLint max_texture, depth_bits;
 static HGLRC graphics_context;
@@ -374,7 +374,7 @@ static void draw_overlay(HDC dc) {
     glEnd();
 
     glColor3f(0.4f, 1.0f, 0.5f);
-    snprintf(line, sizeof(line), "EM4 DEBUG | %s | F9 next  F10 hide  F6 snapshot",
+    snprintf(line, sizeof(line), "EM4 DEBUG | %s | Ctrl+F10 next  F10 hide  F6 snapshot",
         pages[current_page >= 0 && current_page < 5 ? current_page : 0]);
     draw_text(18, 27, line, width);
     glColor3f(1.0f, 1.0f, 1.0f);
@@ -396,7 +396,7 @@ static void draw_overlay(HDC dc) {
             (style & (WS_CAPTION | WS_THICKFRAME)) ? "WINDOW" : "NO BORDER",
             (unsigned long long)((GetTickCount64() - started_at) / 1000));
         draw_text(18, 116, line, width);
-        draw_text(18, 170, "F9: timing, graphics, and live game/plugin logs", width);
+        draw_text(18, 170, "Ctrl+F10: timing, graphics, and live game/plugin logs", width);
         draw_text(18, 192, "F11: toggle window mode", width);
     } else if (current_page == 1) {
         unsigned i;
@@ -444,16 +444,16 @@ static void draw_overlay(HDC dc) {
         char target[260], result[160], watch_status[160];
         hot_reload_get_display(target, sizeof(target), result, sizeof(result),
             watch_status, sizeof(watch_status));
-        draw_text(18, 50, "Automatic reload is ON for loaded .v3o and textures.", width);
-        draw_text(18, 77, "Save an asset file. Changed resources reload in place.", width);
-        draw_text(18, 104, "F5 retries the last changed asset.", width);
-        draw_text(18, 131, "Optional: reload_target.txt targets one resource with F5.", width);
+        draw_text(18, 50, "Automatic reload is ON for loaded assets.", width);
+        draw_text(18, 77, "Changed .v3o files also apply to future spawns.", width);
+        draw_text(18, 104, "Ctrl+F6 retries the last changed asset.", width);
+        draw_text(18, 131, "Optional: reload_target.txt targets one resource with Ctrl+F6.", width);
         draw_text(18, 169, "Last changed or selected resource:", width);
         draw_text(18, 190, target, width);
         draw_text(18, 223, result, width);
         draw_text(18, 249, watch_status, width);
         glColor3f(0.7f, 0.85f, 1.0f);
-        draw_text(18, 279, "Watching loose files inside Data and Mods.", width);
+        draw_text(18, 279, "Model copies stay next to source files. Avoid saving this test session.", width);
     }
     glColor3f(0.7f, 0.9f, 0.7f);
     draw_text(18, 312, status_text, width);
@@ -534,9 +534,9 @@ static BOOL install_swap_hook(void) {
 }
 
 static DWORD WINAPI debug_worker(LPVOID unused) {
-    const int keys[] = { VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10,
+    const int keys[] = { VK_F6, VK_F7, VK_F8, VK_F10,
         VK_PRIOR, VK_NEXT, VK_END };
-    BOOL previous[9] = { FALSE };
+    BOOL previous[7] = { FALSE };
     ULONGLONG last_log_refresh = 0;
     int attempts;
     (void)unused;
@@ -546,7 +546,7 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
         host->log("debug", "Could not find vBase71.dll SwapBuffers delay import");
         return 0;
     }
-    host->log("debug", "SwapBuffers hook installed; F5 hot reload, F9 pages, F10 visibility, F6 snapshot");
+    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 hot reload, Ctrl+F10 pages, F10 visibility, F6 snapshot");
     for (;;) {
         DWORD pid = 0;
         unsigned i;
@@ -555,16 +555,23 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
         for (i = 0; i < sizeof(keys) / sizeof(keys[0]); ++i) {
             BOOL down = (GetAsyncKeyState(keys[i]) & 0x8000) != 0;
             if (down && !previous[i] && pid == GetCurrentProcessId()) {
+                BOOL control = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
                 switch (keys[i]) {
-                case VK_F5: hot_reload_request(); break;
-                case VK_F6: save_snapshot(); break;
+                case VK_F6:
+                    if (control) hot_reload_request();
+                    else save_snapshot();
+                    break;
                 case VK_F7: InterlockedExchange(&issues_only, !issues_only);
                     InterlockedExchange(&log_scroll, 0); break;
                 case VK_F8: InterlockedExchange(&log_source, !log_source);
                     InterlockedExchange(&log_scroll, 0); break;
-                case VK_F9: InterlockedExchange(&page, (page + 1) % 5); break;
-                case VK_F10: InterlockedExchange(&visible, !visible);
-                    host->log("debug", visible ? "Overlay shown" : "Overlay hidden"); break;
+                case VK_F10:
+                    if (control) InterlockedExchange(&page, (page + 1) % 5);
+                    else {
+                        InterlockedExchange(&visible, !visible);
+                        host->log("debug", visible ? "Overlay shown" : "Overlay hidden");
+                    }
+                    break;
                 case VK_PRIOR: InterlockedExchangeAdd(&log_scroll, LOG_VIEW_ROWS); break;
                 case VK_NEXT:
                     if (log_scroll > LOG_VIEW_ROWS)

@@ -6,15 +6,17 @@ An experimental native plugin package for **911 First Responders / Emergency 4**
 
 | Key | Action |
 | --- | --- |
-| **F5** | Retry the last changed asset. If `EM4Plugins\reload_target.txt` names a resource, reload that one instead. |
+| **Ctrl + F6** | Retry the last changed texture or model. If `EM4Plugins\reload_target.txt` names a resource, try that one instead. A manual model target needs a prior file change so the watcher knows its physical path. |
 | **F6** | Save `EM4Plugins\debug_snapshot.txt` with performance, graphics, and recent log information. |
 | **F7** | On the Logs page, switch between all lines and likely issues. |
 | **F8** | On the Logs page, switch between the game's `logfile.txt` and the plugin loader log. |
-| **F9** | Cycle through Overview, Timing, Graphics, Logs, and Hot Reload. |
+| **Ctrl + F10** | Cycle through Overview, Timing, Graphics, Logs, and Hot Reload. |
 | **F10** | Show or hide the `EM4 DEBUG` menu. |
 | **F11** | Toggle the game window. From fullscreen, it opens a centered window at 80% of the monitor size. From a normal window, it fills the monitor without borders. Press F11 again to restore the original state. |
 | **Ctrl + Shift + F11** | Restore and focus the game if it remains minimized after switching to a texture editor or another app. This shortcut works while another app has focus. |
 | **Page Up / Page Down** | Scroll through the selected log. **End** returns to the newest entries. |
+
+The plugin does not bind F1 through F5, F9, or F12, which the game uses for its own commands.
 
 The menu appears automatically when the game starts. Loader and plugin messages are written to `EM4Plugins\em4_plugins.log` in the game directory.
 
@@ -24,19 +26,21 @@ The Overview page shows FPS, average and 95th-percentile frame time, the worst r
 
 The Logs page reads the most recent 512 KiB of each log and retains up to 96 recent lines plus 96 likely issues. The issue filter uses markers and words such as `error`, `failed`, and `not found`; it is a convenience filter, not a severity level reported by the game. The snapshot contains the same bounded log history.
 
-## Reload models and textures while the game runs
+## Reload textures and models while the game runs
 
-Automatic reload is on by default. Save a changed `.v3o` model or texture file under the game's `Data` or `Mods` folder while the game runs. The plugin receives file change notifications, waits 750 ms after the last notification, finds matching resources already loaded by the Vision engine, and reloads them. Open the Hot Reload page with **F9** to see the last changed path, result, and queue status. Press **F5** to retry the last changed asset.
+Automatic reload is on by default. Save a changed texture or `.v3o` file under the game's `Data` or `Mods` folder while the game runs. The plugin receives file change notifications and waits 750 ms after the last notification. Open the Hot Reload page with **Ctrl + F10** to see the last changed path, result, and queue status. Press **Ctrl + F6** to retry the last changed file.
 
-The optional `EM4Plugins\reload_target.txt` file remains available for manual reload. Replace its first line with one loaded engine path and press **F5**. Leave its first line as a comment to make F5 retry the last changed asset.
+For textures already loaded by Vision, the plugin reloads the resource. For a changed model, it copies the new `.v3o` beside the source with a `.__em4debug_` suffix and loads that copy as a new resource. It then uses the engine's `SetModel` method on matching entities. Each rendered frame also checks for newly spawned entities that still use the original model and switches them to the latest copy. If there are no matching entities at the time of the edit, the copy remains ready for later spawns. It keeps the old resource loaded, avoiding the direct unload that previously removed the vehicle mesh and crashed the game. The source `.v3o` is never overwritten by the plugin. The generated model copies remain in the mod folder because a game save may reference them. Avoid saving a test session after swapping models unless you intend to keep those copies.
+
+The optional `EM4Plugins\reload_target.txt` file remains available for manual reload. Replace its first line with one loaded resource path and press **Ctrl + F6**. Leave its first line as a comment to make Ctrl + F6 retry the last changed asset.
 
 ```text
-mod:/Models/Vehicles/MyTruck.v3o
+mod:/Textures/MyTruck.dds
 ```
 
-For a texture, use its loaded engine path instead, such as `mod:/Textures/MyTruck.dds`. The manual selection accepts `.v3o`, `.dds`, `.tga`, `.png`, `.bmp`, `.jpg`, and `.jpeg`. The path must identify a resource already held by the engine. A filesystem path such as `C:\Mods\...` is not an engine path.
+Use the resource's loaded engine path, such as `mod:/Textures/MyTruck.dds`. The manual selection accepts `.v3o`, `.dds`, `.tga`, `.png`, `.bmp`, `.jpg`, and `.jpeg`. A `.v3o` selection must match the last changed file so the watcher can supply its physical path. The path must identify a resource already held by the engine. A filesystem path such as `C:\Mods\...` is not an engine path.
 
-The plugin watches loose files in `Data` and `Mods`, enumerates Vision's loaded model and texture resources after a relevant file changes, and asks the engine to reload matching resources on the render thread. Assets inside archives and unloaded assets are not reloaded. A changed file in an inactive mod can match a loaded resource with the same relative path; the engine still resolves the active resource when it reloads. The feature is restricted to the verified Steam engine DLL build. Keep a backup of edited assets because an invalid model or texture can make the game fail to render the resource.
+The plugin watches loose files in `Data` and `Mods` and handles them on the render thread. Assets inside archives and unloaded assets are not reloaded. A changed file in an inactive mod can match a loaded resource with the same relative path, but the model swap will proceed only if the copied model loads through the game's current virtual file system. The feature is restricted to the verified Steam engine DLL build. Keep a backup of edited assets because an invalid model or texture can make the game fail to render the resource.
 
 ## Compatibility
 
@@ -106,6 +110,6 @@ The loader calls `BOOL WINAPI EM4PluginInit(const EM4HostAPI *host)` for each DL
 
 ## Validation and limitations
 
-The x86 build, DirectInput forwarding, window restoration, and OpenGL drawing were tested separately. A windowed OpenGL smoke test verified all five pages, a real Windows file change notification, graphics state restoration, issue retention after routine log spam, snapshot creation, and reading the optional selected reload path. In the game, temporarily changing only the timestamp of a loaded `.v3o` and a loaded `.dds` produced `AUTO: reloaded 1/1` for each type. Both original timestamps were restored and the file hashes were unchanged. The player visually confirmed the earlier overlay version. The visual result of editing asset bytes has not yet been checked in the running game.
+The x86 build, DirectInput forwarding, window restoration, and OpenGL drawing were tested separately. A windowed OpenGL smoke test verified all five pages, a real Windows file change notification, graphics state restoration, issue retention after routine log spam, snapshot creation, and reading the optional selected reload path. In the game, changing a loaded texture reloaded it successfully. Directly unloading a changed vehicle `.v3o` removed the visible mesh and was followed by a game exit. The copy-and-swap path was tested with `Sprinter.v3o` in the Blumenau mod: existing entities and vehicles spawned after an edit received the new model. The user confirmed the visible changes. A second edit in the same session also updated existing and newly spawned entities. Other model types have not yet been tested.
 
 The plugin API is experimental and does not expose the game's internal object model. The native `.vplugin` contract used by the Vision engine has not been characterized here. No license has been selected for this source repository.

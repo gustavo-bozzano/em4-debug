@@ -50,8 +50,14 @@ static DWORD WINAPI watch_directory(LPVOID argument) {
                     if ((event->Action == FILE_ACTION_ADDED ||
                          event->Action == FILE_ACTION_MODIFIED ||
                          event->Action == FILE_ACTION_RENAMED_NEW_NAME) &&
-                        supported_file(logical))
-                        hot_reload_file_changed(logical);
+                        supported_file(logical) &&
+                        !strstr(logical, ".__em4debug_")) {
+                        char physical[MAX_PATH];
+                        int written = snprintf(physical, sizeof(physical),
+                            "%s\\%s", root->path, relative);
+                        if (written > 0 && written < (int)sizeof(physical))
+                            hot_reload_file_changed(logical, physical);
+                    }
                 }
             }
             if (!event->NextEntryOffset) break;
