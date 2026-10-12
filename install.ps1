@@ -16,6 +16,8 @@ $manifestPath = Join-Path $pluginDir 'install-manifest.json'
 $sourceProxy = Join-Path $PSScriptRoot 'build\dinput8.dll'
 $sourcePlugin = Join-Path $PSScriptRoot 'build\em4_borderless.dll'
 $sourceDebug = Join-Path $PSScriptRoot 'build\em4_debug.dll'
+$reloadTarget = Join-Path $pluginDir 'reload_target.txt'
+$reloadTemplate = Join-Path $PSScriptRoot 'examples\reload_target.txt'
 
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Em4.exe was not found in the specified directory.' }
 if (Get-Process Em4 -ErrorAction SilentlyContinue) { throw 'Close the game before installing or uninstalling.' }
@@ -72,6 +74,9 @@ if ($UpgradeDebug) {
     }
     $newHash = (Get-FileHash -LiteralPath $sourceDebug -Algorithm SHA256).Hash
     if ($newHash -eq $manifest.debug_sha256) {
+        if (-not (Test-Path -LiteralPath $reloadTarget)) {
+            Copy-Item -LiteralPath $reloadTemplate -Destination $reloadTarget
+        }
         Write-Host 'The installed debug DLL already matches this build.'
         return
     }
@@ -107,6 +112,9 @@ if ($UpgradeDebug) {
             Remove-Item -LiteralPath $backup
         }
     }
+    if (-not (Test-Path -LiteralPath $reloadTarget)) {
+        Copy-Item -LiteralPath $reloadTemplate -Destination $reloadTarget
+    }
     Write-Host 'Debug DLL upgraded. The other installed DLLs were preserved.'
     return
 }
@@ -127,6 +135,9 @@ New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
 Copy-Item -LiteralPath $sourceProxy -Destination $proxy
 Copy-Item -LiteralPath $sourcePlugin -Destination $plugin
 Copy-Item -LiteralPath $sourceDebug -Destination $debug
+if (-not (Test-Path -LiteralPath $reloadTarget)) {
+    Copy-Item -LiteralPath $reloadTemplate -Destination $reloadTarget
+}
 @{
     proxy_sha256 = (Get-FileHash -LiteralPath $proxy -Algorithm SHA256).Hash
     plugin_sha256 = (Get-FileHash -LiteralPath $plugin -Algorithm SHA256).Hash

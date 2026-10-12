@@ -20,7 +20,9 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to build dinput8.dll" }
 if ($LASTEXITCODE -ne 0) { throw "Failed to build em4_borderless.dll" }
 
 & $ZigPath cc -target x86-windows-gnu -O2 -shared "-I$include" `
-    (Join-Path $src "debug_overlay.c") (Join-Path $src "debug_overlay.def") `
+    (Join-Path $src "debug_overlay.c") (Join-Path $src "hot_reload.c") `
+    (Join-Path $src "auto_watch.c") `
+    (Join-Path $src "debug_overlay.def") `
     -o (Join-Path $build "em4_debug.dll") -lkernel32 -luser32 -lgdi32 -lopengl32 -lpsapi
 if ($LASTEXITCODE -ne 0) { throw "Failed to build em4_debug.dll" }
 

@@ -7,6 +7,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "em4_plugin.h"
+#include "hot_reload.h"
 
 #define HISTORY_SIZE 120
 #define LOG_CAPACITY 96
@@ -325,7 +326,7 @@ static void draw_overlay(HDC dc) {
     char line[LOG_WIDTH];
     unsigned width;
     int panel_right;
-    const char *pages[] = { "OVERVIEW", "TIMING", "GRAPHICS", "LOGS" };
+    const char *pages[] = { "OVERVIEW", "TIMING", "GRAPHICS", "LOGS", "HOT RELOAD" };
     LONG current_page = page;
     HGLRC context = wglGetCurrentContext();
 
@@ -374,7 +375,7 @@ static void draw_overlay(HDC dc) {
 
     glColor3f(0.4f, 1.0f, 0.5f);
     snprintf(line, sizeof(line), "EM4 DEBUG | %s | F9 next  F10 hide  F6 snapshot",
-        pages[current_page >= 0 && current_page < 4 ? current_page : 0]);
+        pages[current_page >= 0 && current_page < 5 ? current_page : 0]);
     draw_text(18, 27, line, width);
     glColor3f(1.0f, 1.0f, 1.0f);
     if (current_page == 0) {
@@ -437,8 +438,22 @@ static void draw_overlay(HDC dc) {
         snprintf(line, sizeof(line), "Viewport %dx%d | Process ID %lu",
             viewport[2], viewport[3], (unsigned long)GetCurrentProcessId());
         draw_text(18, 138, line, width);
-    } else {
+    } else if (current_page == 3) {
         draw_log_page(width);
+    } else {
+        char target[260], result[160], watch_status[160];
+        hot_reload_get_display(target, sizeof(target), result, sizeof(result),
+            watch_status, sizeof(watch_status));
+        draw_text(18, 50, "Automatic reload is ON for loaded .v3o and textures.", width);
+        draw_text(18, 77, "Save an asset file. Changed resources reload in place.", width);
+        draw_text(18, 104, "F5 retries the last changed asset.", width);
+        draw_text(18, 131, "Optional: reload_target.txt targets one resource with F5.", width);
+        draw_text(18, 169, "Last changed or selected resource:", width);
+        draw_text(18, 190, target, width);
+        draw_text(18, 223, result, width);
+        draw_text(18, 249, watch_status, width);
+        glColor3f(0.7f, 0.85f, 1.0f);
+        draw_text(18, 279, "Watching loose files inside Data and Mods.", width);
     }
     glColor3f(0.7f, 0.9f, 0.7f);
     draw_text(18, 312, status_text, width);
@@ -452,11 +467,14 @@ static void draw_overlay(HDC dc) {
 }
 
 static BOOL WINAPI hooked_swap(HDC dc) {
+    BOOL result;
     update_metrics();
     if (InterlockedCompareExchange(&first_frame_logged, 1, 0) == 0)
         host->log("debug", "First SwapBuffers frame observed");
     if (visible) draw_overlay(dc);
-    return real_swap(dc);
+    result = real_swap(dc);
+    hot_reload_on_frame();
+    return result;
 }
 
 static BOOL install_swap_hook(void) {
@@ -516,9 +534,9 @@ static BOOL install_swap_hook(void) {
 }
 
 static DWORD WINAPI debug_worker(LPVOID unused) {
-    const int keys[] = { VK_F6, VK_F7, VK_F8, VK_F9, VK_F10,
+    const int keys[] = { VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10,
         VK_PRIOR, VK_NEXT, VK_END };
-    BOOL previous[8] = { FALSE };
+    BOOL previous[9] = { FALSE };
     ULONGLONG last_log_refresh = 0;
     int attempts;
     (void)unused;
@@ -528,7 +546,7 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
         host->log("debug", "Could not find vBase71.dll SwapBuffers delay import");
         return 0;
     }
-    host->log("debug", "SwapBuffers hook installed; F9 pages, F10 visibility, F6 snapshot");
+    host->log("debug", "SwapBuffers hook installed; F5 hot reload, F9 pages, F10 visibility, F6 snapshot");
     for (;;) {
         DWORD pid = 0;
         unsigned i;
@@ -538,12 +556,13 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
             BOOL down = (GetAsyncKeyState(keys[i]) & 0x8000) != 0;
             if (down && !previous[i] && pid == GetCurrentProcessId()) {
                 switch (keys[i]) {
+                case VK_F5: hot_reload_request(); break;
                 case VK_F6: save_snapshot(); break;
                 case VK_F7: InterlockedExchange(&issues_only, !issues_only);
                     InterlockedExchange(&log_scroll, 0); break;
                 case VK_F8: InterlockedExchange(&log_source, !log_source);
                     InterlockedExchange(&log_scroll, 0); break;
-                case VK_F9: InterlockedExchange(&page, (page + 1) % 4); break;
+                case VK_F9: InterlockedExchange(&page, (page + 1) % 5); break;
                 case VK_F10: InterlockedExchange(&visible, !visible);
                     host->log("debug", visible ? "Overlay shown" : "Overlay hidden"); break;
                 case VK_PRIOR: InterlockedExchangeAdd(&log_scroll, LOG_VIEW_ROWS); break;
@@ -585,6 +604,7 @@ __declspec(dllexport) BOOL WINAPI EM4PluginInit(const EM4HostAPI *api) {
         snprintf(snapshot_path, sizeof(snapshot_path), "%sEM4Plugins\\debug_snapshot.txt", executable) >= MAX_PATH)
         return FALSE;
     host = api;
+    hot_reload_init(api, executable);
     InitializeCriticalSection(&log_lock);
     QueryPerformanceFrequency(&frequency);
     if (!frequency.QuadPart) {
