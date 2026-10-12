@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$GamePath,
-    [switch]$Uninstall
+    [switch]$Uninstall,
+    [switch]$UpgradeDebug
 )
 
 $ErrorActionPreference = 'Stop'
@@ -18,6 +19,7 @@ $sourceDebug = Join-Path $PSScriptRoot 'build\em4_debug.dll'
 
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Em4.exe was not found in the specified directory.' }
 if (Get-Process Em4 -ErrorAction SilentlyContinue) { throw 'Close the game before installing or uninstalling.' }
+if ($Uninstall -and $UpgradeDebug) { throw 'Choose either -Uninstall or -UpgradeDebug.' }
 
 if ($Uninstall) {
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
@@ -51,6 +53,62 @@ if (-not (Test-Path -LiteralPath $sourceProxy -PathType Leaf) -or
     -not (Test-Path -LiteralPath $sourcePlugin -PathType Leaf) -or
     -not (Test-Path -LiteralPath $sourceDebug -PathType Leaf)) {
     throw 'Built DLLs were not found in the build directory. Run build.ps1 first.'
+}
+if ($UpgradeDebug) {
+    if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+        throw 'Installation manifest not found. Upgrade stopped.'
+    }
+    $manifestText = Get-Content -LiteralPath $manifestPath -Raw
+    $manifest = $manifestText | ConvertFrom-Json
+    foreach ($entry in @(
+        @{ Path = $proxy; Hash = $manifest.proxy_sha256 },
+        @{ Path = $plugin; Hash = $manifest.plugin_sha256 },
+        @{ Path = $debug; Hash = $manifest.debug_sha256 }
+    )) {
+        if (-not (Test-Path -LiteralPath $entry.Path -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $entry.Path -Algorithm SHA256).Hash -ne $entry.Hash) {
+            throw "Installed file is missing or changed: $($entry.Path). Upgrade stopped."
+        }
+    }
+    $newHash = (Get-FileHash -LiteralPath $sourceDebug -Algorithm SHA256).Hash
+    if ($newHash -eq $manifest.debug_sha256) {
+        Write-Host 'The installed debug DLL already matches this build.'
+        return
+    }
+    $staged = "$debug.new"
+    $backup = "$debug.pre-upgrade.bak"
+    if ((Test-Path -LiteralPath $staged) -or (Test-Path -LiteralPath $backup)) {
+        throw 'A previous upgrade staging file exists. Upgrade stopped.'
+    }
+    $removeBackup = $false
+    try {
+        Copy-Item -LiteralPath $sourceDebug -Destination $staged
+        Copy-Item -LiteralPath $debug -Destination $backup
+        if ((Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash -ne $newHash) {
+            throw 'Staged debug DLL hash mismatch.'
+        }
+        Copy-Item -LiteralPath $staged -Destination $debug -Force
+        if ((Get-FileHash -LiteralPath $debug -Algorithm SHA256).Hash -ne $newHash) {
+            throw 'Installed debug DLL hash mismatch.'
+        }
+        $manifest.debug_sha256 = $newHash
+        $manifest | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+        $removeBackup = $true
+    } catch {
+        if (Test-Path -LiteralPath $backup) {
+            Copy-Item -LiteralPath $backup -Destination $debug -Force
+            Set-Content -LiteralPath $manifestPath -Value $manifestText -Encoding UTF8
+            $removeBackup = $true
+        }
+        throw
+    } finally {
+        if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged }
+        if ($removeBackup -and (Test-Path -LiteralPath $backup)) {
+            Remove-Item -LiteralPath $backup
+        }
+    }
+    Write-Host 'Debug DLL upgraded. The other installed DLLs were preserved.'
+    return
 }
 if (Test-Path -LiteralPath $proxy) {
     throw 'dinput8.dll already exists in the game directory. Installation stopped to avoid a mod conflict.'
