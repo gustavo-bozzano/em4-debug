@@ -9,6 +9,7 @@
 #include <dbghelp.h>
 #endif
 #include "hot_reload.h"
+#include "unit_inspector.h"
 
 #define TARGET_CAPACITY 260
 #define CHANGE_CAPACITY 64
@@ -119,6 +120,7 @@ command_possible_probe(void *command, void *actor) {
     unsigned char result = original_command_possible(command, actor);
     const char *name;
     unsigned i;
+    unit_inspector_observe(command, actor, result);
     if (!command || !actor || *(unsigned *)((char *)actor + 0x28) != 8)
         return result;
     name = *(const char **)((char *)command + 0xe8);

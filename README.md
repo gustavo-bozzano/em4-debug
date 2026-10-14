@@ -11,11 +11,11 @@ An experimental native plugin package for **911 First Responders / Emergency 4**
 | **F6** | Save `EM4Plugins\debug_snapshot.txt` with performance, graphics, and recent log information. |
 | **F7** | On the Logs page, switch between all lines and likely issues. |
 | **F8** | On the Logs page, switch between the game's `logfile.txt` and the plugin loader log. |
-| **Ctrl + F10** | Cycle through Overview, Timing, Graphics, Logs, and Hot Reload. |
+| **Ctrl + F10** | Cycle through Overview, Timing, Graphics, Logs, Hot Reload, and Unit Inspector. |
 | **F10** | Show or hide the `EM4 DEBUG` menu. |
 | **F11** | Toggle the game window. From fullscreen, it opens a centered window at 80% of the monitor size. From a normal window, it fills the monitor without borders. Press F11 again to restore the original state. |
 | **Ctrl + Shift + F11** | Restore and focus the game if it remains minimized after switching to a texture editor or another app. This shortcut works while another app has focus. |
-| **Page Up / Page Down** | Scroll through the selected log. **End** returns to the newest entries. |
+| **Page Up / Page Down** | Scroll the Logs or Unit Inspector page. **End** returns to the newest log entries or the first inspected command. |
 
 The plugin does not bind F1 through F5, F9, or F12, which the game uses for its own commands.
 
@@ -26,6 +26,14 @@ Some legacy fullscreen sessions remain minimized after switching to another app.
 The Overview page shows FPS, average and 95th-percentile frame time, the worst recent frame, CPU use, working and private RAM, process handles, viewport size, window style, and uptime. CPU use is normalized against all logical processors. The Timing page includes a 120-frame graph. The Graphics page shows the OpenGL vendor, renderer, version, maximum texture size, depth bits, and pixel format.
 
 The Logs page reads the most recent 512 KiB of each log and retains up to 96 recent lines plus 96 likely issues. The issue filter uses markers and words such as `error`, `failed`, and `not found`; it is a convenience filter, not a severity level reported by the game. The snapshot contains the same bounded log history.
+
+## Inspect a selected vehicle
+
+Select a vehicle in the game and open **Unit Inspector** with **Ctrl + F10**. The page lists the commands attached to the first selected vehicle, their group keys, the command script paths reported by the engine, and each command's latest availability check. **Page Up** and **Page Down** move through the list. If multiple vehicles are selected, the header shows their count and inspects the first one. The hexadecimal vehicle identifier is its current memory address, useful for comparing logs during one session.
+
+To investigate a command that is missing entirely, create `EM4Plugins/inspect_command.txt` in the game folder and put the command name on its first line, for example `VCmdTeste`. The page then reports whether the name is attached to the selected vehicle, registered in the command manager but not attached, or absent from the manager. The file is optional and can be edited while the game runs; the inspector reads it again within one second.
+
+`CheckPossible denied` means the engine's command availability check returned false for that vehicle during the last ten seconds. `Not checked recently` means the inspector has no recent result; it does not prove the command is unavailable. `Different manager instance` identifies an attached command whose name currently resolves to another native object. An attached, available command can still be hidden by other UI logic. The inspector reports the observed layer and does not claim to know every UI filtering rule. Inspection is read-only and works only with the verified Steam `Em4.exe` build.
 
 ## Reload textures and models while the game runs
 
@@ -114,8 +122,10 @@ include/em4_plugin.h       Small host API shared by the loader and plugins
 src/dinput8_proxy.c        DirectInput proxy and plugin loader
 src/debug_overlay.c       OpenGL menu, log viewer, snapshot, and hotkeys
 src/hot_reload.c          Resource matching and runtime reload
+src/unit_inspector.c      Selected vehicle commands and availability checks
 src/auto_watch.c          Windows file change notifications for Data and Mods
 include/hot_reload.h      Hot reload interface for the menu
+include/unit_inspector.h  Unit Inspector data interface
 examples/reload_target.txt  Editable resource path template
 src/borderless.c          Window-mode toggle and F11 handler
 src/*.def                Explicit DLL exports

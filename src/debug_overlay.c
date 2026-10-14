@@ -8,11 +8,13 @@
 #include <ctype.h>
 #include "em4_plugin.h"
 #include "hot_reload.h"
+#include "unit_inspector.h"
 
 #define HISTORY_SIZE 120
 #define LOG_CAPACITY 96
 #define LOG_WIDTH 160
 #define LOG_VIEW_ROWS 9
+#define INSPECTOR_VIEW_ROWS 6
 
 typedef BOOL (WINAPI *SwapBuffersFn)(HDC);
 
@@ -45,7 +47,7 @@ static unsigned frame_next, frame_valid;
 static LARGE_INTEGER previous_frame_tick;
 static ULONGLONG previous_cpu_ticks, started_at;
 static DWORD processor_count = 1, handle_count;
-static volatile LONG page, log_source, issues_only, log_scroll;
+static volatile LONG page, log_source, issues_only, log_scroll, inspector_scroll;
 static CRITICAL_SECTION log_lock;
 static char game_log_path[MAX_PATH], plugin_log_path[MAX_PATH], snapshot_path[MAX_PATH];
 static char game_lines[LOG_CAPACITY][LOG_WIDTH];
@@ -326,7 +328,7 @@ static void draw_overlay(HDC dc) {
     char line[LOG_WIDTH];
     unsigned width;
     int panel_right;
-    const char *pages[] = { "OVERVIEW", "TIMING", "GRAPHICS", "LOGS", "HOT RELOAD" };
+    const char *pages[] = { "OVERVIEW", "TIMING", "GRAPHICS", "LOGS", "HOT RELOAD", "UNIT INSPECTOR" };
     LONG current_page = page;
     HGLRC context = wglGetCurrentContext();
 
@@ -375,7 +377,7 @@ static void draw_overlay(HDC dc) {
 
     glColor3f(0.4f, 1.0f, 0.5f);
     snprintf(line, sizeof(line), "EM4 DEBUG | %s | Ctrl+F10 next  F10 hide  F6 snapshot",
-        pages[current_page >= 0 && current_page < 5 ? current_page : 0]);
+        pages[current_page >= 0 && current_page < 6 ? current_page : 0]);
     draw_text(18, 27, line, width);
     glColor3f(1.0f, 1.0f, 1.0f);
     if (current_page == 0) {
@@ -440,7 +442,7 @@ static void draw_overlay(HDC dc) {
         draw_text(18, 138, line, width);
     } else if (current_page == 3) {
         draw_log_page(width);
-    } else {
+    } else if (current_page == 4) {
         char target[260], result[160], watch_status[160];
         hot_reload_get_display(target, sizeof(target), result, sizeof(result),
             watch_status, sizeof(watch_status));
@@ -458,6 +460,37 @@ static void draw_overlay(HDC dc) {
         draw_text(18, 249, watch_status, width);
         glColor3f(0.7f, 0.85f, 1.0f);
         draw_text(18, 279, "Model copies stay next to source files. Avoid saving this test session.", width);
+    } else {
+        UnitInspectorSnapshot snapshot;
+        unsigned first, i;
+        unit_inspector_copy(&snapshot);
+        draw_text(18, 50, snapshot.summary, width);
+        first = inspector_scroll < 0 ? 0 : (unsigned)inspector_scroll;
+        if (first >= snapshot.shown_count && snapshot.shown_count)
+            first = snapshot.shown_count - 1;
+        snprintf(line, sizeof(line), "%u attached command%s | showing %u-%u",
+            snapshot.command_count, snapshot.command_count == 1 ? "" : "s",
+            snapshot.shown_count ? first + 1 : 0,
+            snapshot.shown_count < first + INSPECTOR_VIEW_ROWS ?
+                snapshot.shown_count : first + INSPECTOR_VIEW_ROWS);
+        draw_text(18, 72, line, width);
+        glColor3f(0.7f, 0.85f, 1.0f);
+        draw_text(18, 92, snapshot.query_result[0] ? snapshot.query_result :
+            "To check a missing name: EM4Plugins/inspect_command.txt", width);
+        for (i = 0; i < INSPECTOR_VIEW_ROWS && first + i < snapshot.shown_count; ++i) {
+            const UnitCommandRow *row = &snapshot.rows[first + i];
+            float y = (float)(116 + i * 27);
+            if (strstr(row->status, "denied") || strstr(row->status, "Missing") ||
+                strstr(row->status, "Different")) glColor3f(1.0f, 0.65f, 0.45f);
+            else glColor3f(1.0f, 1.0f, 1.0f);
+            snprintf(line, sizeof(line), "%s [group %u] | %s",
+                row->name, row->group, row->status);
+            draw_text(18, y, line, width);
+            glColor3f(0.7f, 0.85f, 1.0f);
+            draw_text(27, y + 12, row->script, width - 2);
+        }
+        glColor3f(0.7f, 0.85f, 1.0f);
+        draw_text(18, 293, "PgUp/PgDn scroll | Status is the last engine check (10 s).", width);
     }
     glColor3f(0.7f, 0.9f, 0.7f);
     draw_text(18, 312, status_text, width);
@@ -475,6 +508,7 @@ static BOOL WINAPI hooked_swap(HDC dc) {
     update_metrics();
     if (InterlockedCompareExchange(&first_frame_logged, 1, 0) == 0)
         host->log("debug", "First SwapBuffers frame observed");
+    if (visible && page == 5) unit_inspector_on_frame();
     if (visible) draw_overlay(dc);
     result = real_swap(dc);
     hot_reload_on_frame();
@@ -579,19 +613,33 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
                 case VK_F8: InterlockedExchange(&log_source, !log_source);
                     InterlockedExchange(&log_scroll, 0); break;
                 case VK_F10:
-                    if (control) InterlockedExchange(&page, (page + 1) % 5);
+                    if (control) InterlockedExchange(&page, (page + 1) % 6);
                     else {
                         InterlockedExchange(&visible, !visible);
                         host->log("debug", visible ? "Overlay shown" : "Overlay hidden");
                     }
                     break;
-                case VK_PRIOR: InterlockedExchangeAdd(&log_scroll, LOG_VIEW_ROWS); break;
-                case VK_NEXT:
-                    if (log_scroll > LOG_VIEW_ROWS)
-                        InterlockedExchangeAdd(&log_scroll, -LOG_VIEW_ROWS);
-                    else InterlockedExchange(&log_scroll, 0);
+                case VK_PRIOR:
+                    if (page == 5) {
+                        if (inspector_scroll > INSPECTOR_VIEW_ROWS)
+                            InterlockedExchangeAdd(&inspector_scroll, -INSPECTOR_VIEW_ROWS);
+                        else InterlockedExchange(&inspector_scroll, 0);
+                    } else if (page == 3)
+                        InterlockedExchangeAdd(&log_scroll, LOG_VIEW_ROWS);
                     break;
-                case VK_END: InterlockedExchange(&log_scroll, 0); break;
+                case VK_NEXT:
+                    if (page == 5)
+                        InterlockedExchangeAdd(&inspector_scroll, INSPECTOR_VIEW_ROWS);
+                    else if (page == 3) {
+                        if (log_scroll > LOG_VIEW_ROWS)
+                            InterlockedExchangeAdd(&log_scroll, -LOG_VIEW_ROWS);
+                        else InterlockedExchange(&log_scroll, 0);
+                    }
+                    break;
+                case VK_END:
+                    if (page == 5) InterlockedExchange(&inspector_scroll, 0);
+                    else if (page == 3) InterlockedExchange(&log_scroll, 0);
+                    break;
                 }
             }
             previous[i] = down;
@@ -625,6 +673,7 @@ __declspec(dllexport) BOOL WINAPI EM4PluginInit(const EM4HostAPI *api) {
         return FALSE;
     host = api;
     hot_reload_init(api, executable);
+    unit_inspector_init(api);
     InitializeCriticalSection(&log_lock);
     QueryPerformanceFrequency(&frequency);
     if (!frequency.QuadPart) {
