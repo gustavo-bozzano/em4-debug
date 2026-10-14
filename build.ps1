@@ -30,6 +30,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to build em4_borderless.dll" }
 & $ZigPath cc -target x86-windows-gnu -O2 -shared @debugDefines "-I$include" `
     (Join-Path $src "debug_overlay.c") (Join-Path $src "hot_reload.c") `
     (Join-Path $src "auto_watch.c") (Join-Path $src "unit_inspector.c") `
+    (Join-Path $src "path_viewer.c") `
     (Join-Path $src "debug_overlay.def") `
     -o (Join-Path $build "em4_debug.dll") -lkernel32 -luser32 -lgdi32 -lopengl32 -lpsapi -ldbghelp
 if ($LASTEXITCODE -ne 0) { throw "Failed to build em4_debug.dll" }

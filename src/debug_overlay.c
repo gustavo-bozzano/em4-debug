@@ -9,12 +9,16 @@
 #include "em4_plugin.h"
 #include "hot_reload.h"
 #include "unit_inspector.h"
+#include "path_viewer.h"
 
 #define HISTORY_SIZE 120
 #define LOG_CAPACITY 96
 #define LOG_WIDTH 160
 #define LOG_VIEW_ROWS 9
 #define INSPECTOR_VIEW_ROWS 6
+#define PAGE_COUNT 7
+#define PAGE_UNIT_INSPECTOR 5
+#define PAGE_MAP_PATHS 6
 
 typedef BOOL (WINAPI *SwapBuffersFn)(HDC);
 
@@ -56,7 +60,6 @@ static char game_issues[LOG_CAPACITY][LOG_WIDTH];
 static char plugin_issues[LOG_CAPACITY][LOG_WIDTH];
 static unsigned game_line_count, plugin_line_count;
 static unsigned game_issue_count, plugin_issue_count;
-static char status_text[100] = "Ctrl+F10 pages  F10 hide  F6 snapshot";
 static char gl_vendor[100], gl_renderer[100], gl_version[100];
 static GLint max_texture, depth_bits;
 static HGLRC graphics_context;
@@ -163,7 +166,6 @@ static void save_snapshot(void) {
     FILE *output = fopen(snapshot_path, "wb");
     unsigned i;
     if (!output) {
-        snprintf(status_text, sizeof(status_text), "Snapshot failed: cannot write file");
         host->log("debug", "Could not write debug_snapshot.txt");
         return;
     }
@@ -188,10 +190,9 @@ static void save_snapshot(void) {
     for (i = 0; i < plugin_issue_count; ++i) fprintf(output, "%s\r\n", plugin_issues[i]);
     LeaveCriticalSection(&log_lock);
     if (fclose(output) != 0) {
-        snprintf(status_text, sizeof(status_text), "Snapshot failed: could not close file");
+        host->log("debug", "Could not close debug_snapshot.txt");
         return;
     }
-    snprintf(status_text, sizeof(status_text), "Saved EM4Plugins\\debug_snapshot.txt");
     host->log("debug", "Diagnostic snapshot saved");
 }
 
@@ -328,7 +329,7 @@ static void draw_overlay(HDC dc) {
     char line[LOG_WIDTH];
     unsigned width;
     int panel_right;
-    const char *pages[] = { "OVERVIEW", "TIMING", "GRAPHICS", "LOGS", "HOT RELOAD", "UNIT INSPECTOR" };
+    const char *pages[] = { "OVERVIEW", "TIMING", "GRAPHICS", "LOGS", "HOT RELOAD", "UNIT INSPECTOR", "MAP PATHS" };
     LONG current_page = page;
     HGLRC context = wglGetCurrentContext();
 
@@ -377,7 +378,7 @@ static void draw_overlay(HDC dc) {
 
     glColor3f(0.4f, 1.0f, 0.5f);
     snprintf(line, sizeof(line), "EM4 DEBUG | %s | Ctrl+F10 next  F10 hide  F6 snapshot",
-        pages[current_page >= 0 && current_page < 6 ? current_page : 0]);
+        pages[current_page >= 0 && current_page < PAGE_COUNT ? current_page : 0]);
     draw_text(18, 27, line, width);
     glColor3f(1.0f, 1.0f, 1.0f);
     if (current_page == 0) {
@@ -398,7 +399,7 @@ static void draw_overlay(HDC dc) {
             (style & (WS_CAPTION | WS_THICKFRAME)) ? "WINDOW" : "NO BORDER",
             (unsigned long long)((GetTickCount64() - started_at) / 1000));
         draw_text(18, 116, line, width);
-        draw_text(18, 170, "Ctrl+F10: timing, graphics, and live game/plugin logs", width);
+        draw_text(18, 170, "Ctrl+F10: cycle diagnostics, inspector, and map paths", width);
         draw_text(18, 192, "F11: toggle window mode", width);
     } else if (current_page == 1) {
         unsigned i;
@@ -460,7 +461,7 @@ static void draw_overlay(HDC dc) {
         draw_text(18, 249, watch_status, width);
         glColor3f(0.7f, 0.85f, 1.0f);
         draw_text(18, 279, "Model copies stay next to source files. Avoid saving this test session.", width);
-    } else {
+    } else if (current_page == PAGE_UNIT_INSPECTOR) {
         UnitInspectorSnapshot snapshot;
         unsigned first, i;
         unit_inspector_copy(&snapshot);
@@ -492,9 +493,47 @@ static void draw_overlay(HDC dc) {
         glColor3f(0.7f, 0.85f, 1.0f);
         draw_text(18, 293, "PgUp/PgDn scroll | Status is the last engine check (10 s).", width);
     }
-    glColor3f(0.7f, 0.9f, 0.7f);
-    draw_text(18, 312, status_text, width);
+    glColor3f(1.0f, 0.85f, 0.45f);
+    draw_text(18, 312, "Ctrl+Shift+F11: restore the game if it stays minimized.", width);
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(previous_matrix);
+    glPopAttrib();
+}
 
+static void draw_path_labels(HDC dc) {
+    PathViewerLabel rows[PATH_VIEWER_MAX_LABELS];
+    unsigned count = path_viewer_copy_labels(rows, PATH_VIEWER_MAX_LABELS);
+    GLint viewport[4], previous_matrix;
+    unsigned i;
+    if (!count || !prepare_font(dc)) return;
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    if (viewport[2] <= 0 || viewport[3] <= 0) return;
+    glGetIntegerv(GL_MATRIX_MODE, &previous_matrix);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, viewport[2], viewport[3], 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glDisable(GL_ALPHA_TEST);
+    glDisable(GL_FOG);
+    glDisable(GL_BLEND);
+    for (i = 0; i < count; ++i) {
+        glColor3f(0.0f, 0.0f, 0.0f);
+        draw_text(rows[i].x + 1, rows[i].y + 1, rows[i].name, 63);
+        glColor3f(1.0f, 1.0f, 0.75f);
+        draw_text(rows[i].x, rows[i].y, rows[i].name, 63);
+    }
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
@@ -508,8 +547,11 @@ static BOOL WINAPI hooked_swap(HDC dc) {
     update_metrics();
     if (InterlockedCompareExchange(&first_frame_logged, 1, 0) == 0)
         host->log("debug", "First SwapBuffers frame observed");
-    if (visible && page == 5) unit_inspector_on_frame();
-    if (visible) draw_overlay(dc);
+    if (visible && page == PAGE_UNIT_INSPECTOR) unit_inspector_on_frame();
+    if (path_viewer_is_enabled()) path_viewer_on_frame();
+    path_viewer_draw_world();
+    if (path_viewer_is_enabled()) draw_path_labels(dc);
+    if (visible && page != PAGE_MAP_PATHS) draw_overlay(dc);
     result = real_swap(dc);
     hot_reload_on_frame();
     return result;
@@ -571,6 +613,11 @@ static BOOL install_swap_hook(void) {
     return FALSE;
 }
 
+static void sync_path_page(void) {
+    int should_show = visible && page == PAGE_MAP_PATHS;
+    if (path_viewer_is_enabled() != should_show) path_viewer_toggle();
+}
+
 static DWORD WINAPI debug_worker(LPVOID unused) {
     const int keys[] = { VK_F6, VK_F7, VK_F8, VK_F10,
         VK_PRIOR, VK_NEXT, VK_END };
@@ -585,9 +632,9 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
         return 0;
     }
 #if defined(EM4_EXPERIMENTAL_SCRIPT_RELOAD) && defined(EM4_ALLOW_UNSAFE_SCRIPT_RELOAD_TEST)
-    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 asset retry, Ctrl+F7 command script reload, Ctrl+F10 pages, F10 visibility, F6 snapshot");
+    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 asset retry, Ctrl+F7 command script reload, Ctrl+F10 pages including map paths, F10 visibility, F6 snapshot");
 #else
-    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 asset retry, Ctrl+F7 script status, Ctrl+F10 pages, F10 visibility, F6 snapshot");
+    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 asset retry, Ctrl+F7 script status, Ctrl+F10 pages including map paths, F10 visibility, F6 snapshot");
 #endif
     for (;;) {
         DWORD pid = 0;
@@ -610,12 +657,21 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
                         InterlockedExchange(&log_scroll, 0);
                     }
                     break;
-                case VK_F8: InterlockedExchange(&log_source, !log_source);
-                    InterlockedExchange(&log_scroll, 0); break;
+                case VK_F8:
+                    if (!control) {
+                        InterlockedExchange(&log_source, !log_source);
+                        InterlockedExchange(&log_scroll, 0);
+                    }
+                    break;
                 case VK_F10:
-                    if (control) InterlockedExchange(&page, (page + 1) % 6);
+                    if (control) {
+                        InterlockedExchange(&page, (page + 1) % PAGE_COUNT);
+                        InterlockedExchange(&visible, 1);
+                        sync_path_page();
+                    }
                     else {
                         InterlockedExchange(&visible, !visible);
+                        sync_path_page();
                         host->log("debug", visible ? "Overlay shown" : "Overlay hidden");
                     }
                     break;
@@ -674,6 +730,7 @@ __declspec(dllexport) BOOL WINAPI EM4PluginInit(const EM4HostAPI *api) {
     host = api;
     hot_reload_init(api, executable);
     unit_inspector_init(api);
+    path_viewer_init(api);
     InitializeCriticalSection(&log_lock);
     QueryPerformanceFrequency(&frequency);
     if (!frequency.QuadPart) {

@@ -11,8 +11,8 @@ An experimental native plugin package for **911 First Responders / Emergency 4**
 | **F6** | Save `EM4Plugins\debug_snapshot.txt` with performance, graphics, and recent log information. |
 | **F7** | On the Logs page, switch between all lines and likely issues. |
 | **F8** | On the Logs page, switch between the game's `logfile.txt` and the plugin loader log. |
-| **Ctrl + F10** | Cycle through Overview, Timing, Graphics, Logs, Hot Reload, and Unit Inspector. |
-| **F10** | Show or hide the `EM4 DEBUG` menu. |
+| **Ctrl + F10** | Cycle through Overview, Timing, Graphics, Logs, Hot Reload, Unit Inspector, and Map Paths. |
+| **F10** | Show or hide the current debug page, including its paths when Map Paths is selected. |
 | **F11** | Toggle the game window. From fullscreen, it opens a centered window at 80% of the monitor size. From a normal window, it fills the monitor without borders. Press F11 again to restore the original state. |
 | **Ctrl + Shift + F11** | Restore and focus the game if it remains minimized after switching to a texture editor or another app. This shortcut works while another app has focus. |
 | **Page Up / Page Down** | Scroll the Logs or Unit Inspector page. **End** returns to the newest log entries or the first inspected command. |
@@ -34,6 +34,12 @@ Select a vehicle in the game and open **Unit Inspector** with **Ctrl + F10**. Th
 To investigate a command that is missing entirely, create `EM4Plugins/inspect_command.txt` in the game folder and put the command name on its first line, for example `VCmdTeste`. The page then reports whether the name is attached to the selected vehicle, registered in the command manager but not attached, or absent from the manager. The file is optional and can be edited while the game runs; the inspector reads it again within one second.
 
 `CheckPossible denied` means the engine's command availability check returned false for that vehicle during the last ten seconds. `Not checked recently` means the inspector has no recent result; it does not prove the command is unavailable. `Different manager instance` identifies an attached command whose name currently resolves to another native object. An attached, available command can still be hidden by other UI logic. The inspector reports the observed layer and does not claim to know every UI filtering rule. Inspection is read-only and works only with the verified Steam `Em4.exe` build.
+
+## View map paths
+
+Press **Ctrl + F10** until the Map Paths page is selected. Cyan lines connect the paths' nodes directly in the 3D scene, yellow dots mark every node, and each visible path has its name drawn over it. This page does not draw the large debug panel. Press **Ctrl + F10** again to return to Overview and hide the paths, or press **F10** to temporarily hide or show them. The path list refreshes when the scene changes.
+
+The viewer reads the active Vision camera matrices to align route lines, nodes, and labels with the 3D scene, even when the game leaves a 2D interface projection active at the end of a frame. The route viewer reads the live scene and does not change map or mod files. It is restricted to the verified Steam executable and Vision DLL builds.
 
 ## Reload textures and models while the game runs
 
@@ -123,9 +129,11 @@ src/dinput8_proxy.c        DirectInput proxy and plugin loader
 src/debug_overlay.c       OpenGL menu, log viewer, snapshot, and hotkeys
 src/hot_reload.c          Resource matching and runtime reload
 src/unit_inspector.c      Selected vehicle commands and availability checks
+src/path_viewer.c         Live map route inventory and drawing
 src/auto_watch.c          Windows file change notifications for Data and Mods
 include/hot_reload.h      Hot reload interface for the menu
 include/unit_inspector.h  Unit Inspector data interface
+include/path_viewer.h     Route viewer interface
 examples/reload_target.txt  Editable resource path template
 src/borderless.c          Window-mode toggle and F11 handler
 src/*.def                Explicit DLL exports
