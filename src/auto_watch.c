@@ -13,7 +13,7 @@ static WatchRoot roots[2];
 
 static int supported_file(const char *name) {
     const char *dot = strrchr(name, '.');
-    return dot && (!_stricmp(dot, ".v3o") || !_stricmp(dot, ".dds") ||
+    return dot && (!_stricmp(dot, ".script") || !_stricmp(dot, ".v3o") || !_stricmp(dot, ".dds") ||
         !_stricmp(dot, ".tga") || !_stricmp(dot, ".png") ||
         !_stricmp(dot, ".bmp") || !_stricmp(dot, ".jpg") ||
         !_stricmp(dot, ".jpeg"));

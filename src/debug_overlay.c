@@ -445,9 +445,13 @@ static void draw_overlay(HDC dc) {
         hot_reload_get_display(target, sizeof(target), result, sizeof(result),
             watch_status, sizeof(watch_status));
         draw_text(18, 50, "Automatic reload is ON for loaded assets.", width);
-        draw_text(18, 77, "Changed .v3o files also apply to future spawns.", width);
+#if defined(EM4_EXPERIMENTAL_SCRIPT_RELOAD) && defined(EM4_ALLOW_UNSAFE_SCRIPT_RELOAD_TEST)
+        draw_text(18, 77, "Ctrl+F7 recompiles the last changed command script.", width);
+#else
+        draw_text(18, 77, "Changed .script files need a game session restart.", width);
+#endif
         draw_text(18, 104, "Ctrl+F6 retries the last changed asset.", width);
-        draw_text(18, 131, "Optional: reload_target.txt targets one resource with Ctrl+F6.", width);
+        draw_text(18, 131, "Mission scripts are excluded from live reload.", width);
         draw_text(18, 169, "Last changed or selected resource:", width);
         draw_text(18, 190, target, width);
         draw_text(18, 223, result, width);
@@ -546,7 +550,11 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
         host->log("debug", "Could not find vBase71.dll SwapBuffers delay import");
         return 0;
     }
-    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 hot reload, Ctrl+F10 pages, F10 visibility, F6 snapshot");
+#if defined(EM4_EXPERIMENTAL_SCRIPT_RELOAD) && defined(EM4_ALLOW_UNSAFE_SCRIPT_RELOAD_TEST)
+    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 asset retry, Ctrl+F7 command script reload, Ctrl+F10 pages, F10 visibility, F6 snapshot");
+#else
+    host->log("debug", "SwapBuffers hook installed; Ctrl+F6 asset retry, Ctrl+F7 script status, Ctrl+F10 pages, F10 visibility, F6 snapshot");
+#endif
     for (;;) {
         DWORD pid = 0;
         unsigned i;
@@ -561,8 +569,13 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
                     if (control) hot_reload_request();
                     else save_snapshot();
                     break;
-                case VK_F7: InterlockedExchange(&issues_only, !issues_only);
-                    InterlockedExchange(&log_scroll, 0); break;
+                case VK_F7:
+                    if (control) hot_reload_request_scripts();
+                    else {
+                        InterlockedExchange(&issues_only, !issues_only);
+                        InterlockedExchange(&log_scroll, 0);
+                    }
+                    break;
                 case VK_F8: InterlockedExchange(&log_source, !log_source);
                     InterlockedExchange(&log_scroll, 0); break;
                 case VK_F10:
