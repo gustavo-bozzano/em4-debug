@@ -1,5 +1,6 @@
 # Local build output and compiler caches
 /build/
+/dist/
 /zig-cache/
 /.zig-cache/
 

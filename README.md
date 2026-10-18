@@ -2,6 +2,12 @@
 
 An experimental native plugin package for **911 First Responders / Emergency 4** on Windows. It adds an in-game diagnostics menu and a window-mode shortcut without modifying the game's executable or configuration file.
 
+## Easy setup
+
+Download `EM4-Debug-v1.0.0-win32.zip` from [GitHub Releases](https://github.com/gustavo-bozzano/em4-debug/releases), extract the entire ZIP, and double-click **Install EM4 Debug.cmd**. The wizard looks for a Steam installation and also lets you browse to the folder containing `Em4.exe`. Close the game before applying changes. The same wizard updates an existing installation managed by EM4 Debug or removes it.
+
+The release package includes prebuilt 32-bit DLLs, so Zig is not needed to install it. The command-script reload feature is enabled in the release DLL and remains experimental. Test script edits in a session you can afford to restart. The package does not change `em4.cfg` or install a multiplayer player-count patch.
+
 ## Features
 
 | Key | Action |
@@ -105,6 +111,14 @@ To update only the debug menu in an existing installation managed by this script
 
 The upgrade verifies the current installation against its manifest, stages the new debug DLL, and updates its recorded hash. It leaves the loader and F11 plugin in place.
 
+To update all three managed DLLs together, use the wizard or run:
+
+```powershell
+& .\install.ps1 -GamePath 'C:\path\to\911 First Responders' -UpgradeAll
+```
+
+The full update verifies the current files, stages replacements, and restores the previous DLLs if a replacement fails. It preserves logs and reload settings.
+
 To update only the window and recovery shortcuts, close the game and run:
 
 ```powershell
@@ -139,6 +153,9 @@ src/borderless.c          Window-mode toggle and F11 handler
 src/*.def                Explicit DLL exports
 build.ps1                x86 build script
 install.ps1              Install and uninstall script
+Install-EM4Debug.ps1     Graphical setup wizard
+Install EM4 Debug.cmd    Double-click launcher for the wizard
+package-release.ps1     Build and package a release ZIP
 ```
 
 The loader calls `BOOL WINAPI EM4PluginInit(const EM4HostAPI *host)` for each DLL in `EM4Plugins/` that exports that function. The API currently provides the game window handle and a log callback. Plugins remain loaded until the game exits.
