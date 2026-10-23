@@ -1,6 +1,7 @@
 # EM4 Debug
 
 An experimental native plugin package for **911 First Responders / Emergency 4** on Windows. It adds an in-game diagnostics menu and a window-mode shortcut without modifying the game's executable or configuration file.
+![Plugin screen](./images/plugin.png)
 
 ## Easy setup
 
@@ -34,6 +35,7 @@ The Overview page shows FPS, average and 95th-percentile frame time, the worst r
 The Logs page reads the most recent 512 KiB of each log and retains up to 96 recent lines plus 96 likely issues. The issue filter uses markers and words such as `error`, `failed`, and `not found`; it is a convenience filter, not a severity level reported by the game. The snapshot contains the same bounded log history.
 
 ## Inspect a selected vehicle
+![Unit inspector screen](./images/unit_inspector.png)
 
 Select a vehicle in the game and open **Unit Inspector** with **Ctrl + F10**. The page lists the commands attached to the first selected vehicle, their group keys, the command script paths reported by the engine, and each command's latest availability check. **Page Up** and **Page Down** move through the list. If multiple vehicles are selected, the header shows their count and inspects the first one. The hexadecimal vehicle identifier is its current memory address, useful for comparing logs during one session.
 
@@ -42,6 +44,7 @@ To investigate a command that is missing entirely, create `EM4Plugins/inspect_co
 `CheckPossible denied` means the engine's command availability check returned false for that vehicle during the last ten seconds. `Not checked recently` means the inspector has no recent result; it does not prove the command is unavailable. `Different manager instance` identifies an attached command whose name currently resolves to another native object. An attached, available command can still be hidden by other UI logic. The inspector reports the observed layer and does not claim to know every UI filtering rule. Inspection is read-only and works only with the verified Steam `Em4.exe` build.
 
 ## View map paths
+![Map paths](./images/map_paths.png)
 
 Press **Ctrl + F10** until the Map Paths page is selected. Cyan lines connect the paths' nodes directly in the 3D scene, yellow dots mark every node, and each visible path has its name drawn over it. This page does not draw the large debug panel. Press **Ctrl + F10** again to return to Overview and hide the paths, or press **F10** to temporarily hide or show them. The path list refreshes when the scene changes.
 
