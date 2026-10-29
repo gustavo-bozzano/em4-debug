@@ -1,6 +1,7 @@
 param(
     [string]$ZigPath = "zig",
-    [switch]$EnableCommandScriptReload
+    [switch]$EnableCommandScriptReload,
+    [switch]$TraceVehicleMotion
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,12 +9,15 @@ $root = $PSScriptRoot
 $include = Join-Path $root "include"
 $src = Join-Path $root "src"
 $build = Join-Path $root "build"
-$debugDefines = @()
+$debugDefines = @("-DEM4_MANUAL_VEHICLE")
 if ($EnableCommandScriptReload) {
-    $debugDefines = @(
+    $debugDefines += @(
         "-DEM4_EXPERIMENTAL_SCRIPT_RELOAD",
         "-DEM4_ALLOW_UNSAFE_SCRIPT_RELOAD_TEST"
     )
+}
+if ($TraceVehicleMotion) {
+    $debugDefines += "-DEM4_VEHICLE_MOTION_TRACE"
 }
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 
@@ -30,9 +34,9 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to build em4_borderless.dll" }
 & $ZigPath cc -target x86-windows-gnu -O2 -shared @debugDefines "-I$include" `
     (Join-Path $src "debug_overlay.c") (Join-Path $src "hot_reload.c") `
     (Join-Path $src "auto_watch.c") (Join-Path $src "unit_inspector.c") `
-    (Join-Path $src "path_viewer.c") `
+    (Join-Path $src "path_viewer.c") (Join-Path $src "direct_control.c") `
     (Join-Path $src "debug_overlay.def") `
-    -o (Join-Path $build "em4_debug.dll") -lkernel32 -luser32 -lgdi32 -lopengl32 -lpsapi -ldbghelp
+    -o (Join-Path $build "em4_debug.dll") -lkernel32 -luser32 -lgdi32 -lopengl32 -lpsapi -ldbghelp -lm
 if ($LASTEXITCODE -ne 0) { throw "Failed to build em4_debug.dll" }
 
 Write-Host "DLLs built in $build"

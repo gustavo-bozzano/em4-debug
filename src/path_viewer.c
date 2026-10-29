@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <gl/gl.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "path_viewer.h"
@@ -150,6 +151,61 @@ static void update_camera(void) {
     camera_ready = 1;
 }
 
+int path_viewer_camera_axes(float right[2], float forward[2]) {
+    float right_length, forward_length;
+    if (!right || !forward || !engine_ok || !vision_base) return 0;
+    if (!camera_ready || GetTickCount() - camera_tick > 100)
+        update_camera();
+    if (!camera_ready) return 0;
+    right[0] = camera_modelview[0];
+    right[1] = camera_modelview[4];
+    forward[0] = camera_modelview[1];
+    forward[1] = camera_modelview[5];
+    right_length = sqrtf(right[0] * right[0] + right[1] * right[1]);
+    forward_length = sqrtf(forward[0] * forward[0] + forward[1] * forward[1]);
+    if (!(right_length > 0.1f && forward_length > 0.1f)) return 0;
+    right[0] /= right_length;
+    right[1] /= right_length;
+    forward[0] /= forward_length;
+    forward[1] /= forward_length;
+    return 1;
+}
+
+int path_viewer_camera_position(float position[3]) {
+    unsigned i;
+    if (!position || !engine_ok || !vision_base) return 0;
+    /* Follow runs on the render thread, so use the latest 3D view matrix. */
+    update_camera();
+    if (!camera_ready) return 0;
+    for (i = 0; i < 3; ++i) {
+        float value = -(camera_modelview[i * 4] * camera_modelview[12] +
+                        camera_modelview[i * 4 + 1] * camera_modelview[13] +
+                        camera_modelview[i * 4 + 2] * camera_modelview[14]);
+        if (value != value || value < -1000000.0f || value > 1000000.0f)
+            return 0;
+        position[i] = value;
+    }
+    return 1;
+}
+
+int path_viewer_camera_forward(float forward[3]) {
+    float length;
+    if (!forward || !engine_ok || !vision_base) return 0;
+    update_camera();
+    if (!camera_ready) return 0;
+    forward[0] = -camera_modelview[2];
+    forward[1] = -camera_modelview[6];
+    forward[2] = -camera_modelview[10];
+    length = sqrtf(forward[0] * forward[0] +
+                   forward[1] * forward[1] +
+                   forward[2] * forward[2]);
+    if (!(length > 0.5f && length < 2.0f)) return 0;
+    forward[0] /= length;
+    forward[1] /= length;
+    forward[2] /= length;
+    return 1;
+}
+
 void path_viewer_init(const EM4HostAPI *api) {
     uintptr_t base = (uintptr_t)GetModuleHandleA(NULL);
     path_host = api;
@@ -180,6 +236,40 @@ static void transform(const GLfloat *m, const float in[4], float out[4]) {
     for (i = 0; i < 4; ++i)
         out[i] = m[i] * in[0] + m[4 + i] * in[1] +
                  m[8 + i] * in[2] + m[12 + i] * in[3];
+}
+
+int path_viewer_camera_center_offset(const float target[3], float offset[2]) {
+    float world[4], eye[4], clip[4];
+    float a, b, c, d, determinant;
+    if (!target || !offset || !engine_ok || !vision_base) return 0;
+    update_camera();
+    if (!camera_ready) return 0;
+    world[0] = target[0];
+    world[1] = target[1];
+    world[2] = target[2] + 8.0f;
+    world[3] = 1.0f;
+    transform(camera_modelview, world, eye);
+    transform(camera_projection, eye, clip);
+    if (!(clip[3] > 0.01f)) return 0;
+    /* A horizontal camera translation subtracts the matching view columns. */
+    a = camera_projection[0] * camera_modelview[0] +
+        camera_projection[4] * camera_modelview[1] +
+        camera_projection[8] * camera_modelview[2];
+    b = camera_projection[0] * camera_modelview[4] +
+        camera_projection[4] * camera_modelview[5] +
+        camera_projection[8] * camera_modelview[6];
+    c = camera_projection[1] * camera_modelview[0] +
+        camera_projection[5] * camera_modelview[1] +
+        camera_projection[9] * camera_modelview[2];
+    d = camera_projection[1] * camera_modelview[4] +
+        camera_projection[5] * camera_modelview[5] +
+        camera_projection[9] * camera_modelview[6];
+    determinant = a * d - b * c;
+    if (!(determinant > 0.00001f || determinant < -0.00001f)) return 0;
+    offset[0] = (clip[0] * d - b * clip[1]) / determinant;
+    offset[1] = (a * clip[1] - clip[0] * c) / determinant;
+    return offset[0] > -5000.0f && offset[0] < 5000.0f &&
+           offset[1] > -5000.0f && offset[1] < 5000.0f;
 }
 
 static int project_point(const PathPoint *point, const GLint viewport[4],

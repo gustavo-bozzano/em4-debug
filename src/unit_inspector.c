@@ -119,10 +119,11 @@ static void install_hook(uintptr_t base) {
 }
 #endif
 
-static int selected_entity(uintptr_t base, void **out, unsigned *out_count) {
+static int selected_entity(uintptr_t base, void **out, unsigned *out_count,
+                           unsigned allowed_types) {
     /* The verified build's GetSelectedGameObjects path walks world+0x24 and
        calls GameObject::IsSelected for each object. Follow the same read-only
-       path, but keep only vehicles for this panel. */
+       path, filtering by the types requested by the caller. */
     void *world = *(void **)(base + 0x693f18);
     void *stack[WORLD_NODE_LIMIT];
     unsigned top = 0, visited = 0, count = 0;
@@ -146,13 +147,54 @@ static int selected_entity(uintptr_t base, void **out, unsigned *out_count) {
         if (!readable(entity, 0x1bc) || !readable(*(void **)entity, 0x54) ||
             *(uintptr_t *)((char *)*(void **)entity + 0x50) != base + 0x324c0)
             continue;
-        if (*(unsigned *)((char *)entity + 0x28) != 8) continue;
+        if (!(*(unsigned *)((char *)entity + 0x28) & allowed_types)) continue;
         if (!is_selected(entity)) continue;
         if (!count) *out = entity;
         ++count;
     }
     *out_count = count;
     return 1;
+}
+
+int unit_inspector_entity_valid(void *entity, unsigned allowed_types) {
+    uintptr_t base = (uintptr_t)GetModuleHandleA(NULL);
+    void *vtable;
+    if (!verified_engine(base) || !readable(entity, 0xb4)) return 0;
+    vtable = *(void **)entity;
+    return readable(vtable, 0x54) &&
+        *(uintptr_t *)((char *)vtable + 0x50) == base + 0x324c0 &&
+        (*(unsigned *)((char *)entity + 0x28) & allowed_types) != 0;
+}
+
+int unit_inspector_vehicle_valid(void *vehicle) {
+    return unit_inspector_entity_valid(vehicle, 8);
+}
+
+static int selected_controllable(void **entity, float position[3],
+                                 unsigned allowed_types) {
+    uintptr_t base = (uintptr_t)GetModuleHandleA(NULL);
+    void *selected = NULL;
+    unsigned count = 0;
+    unsigned i;
+    if (!entity || !position || !verified_engine(base) ||
+        !selected_entity(base, &selected, &count, allowed_types) || count != 1 ||
+        !unit_inspector_entity_valid(selected, allowed_types)) return 0;
+    for (i = 0; i < 3; ++i) {
+        float value = *(float *)((char *)selected + 0xa8 + i * sizeof(float));
+        if (value != value || value < -1000000.0f || value > 1000000.0f)
+            return 0;
+        position[i] = value;
+    }
+    *entity = selected;
+    return 1;
+}
+
+int unit_inspector_selected_vehicle(void **vehicle, float position[3]) {
+    return selected_controllable(vehicle, position, 8);
+}
+
+int unit_inspector_selected_unit(void **unit, float position[3]) {
+    return selected_controllable(unit, position, 8 | 16);
 }
 
 static int manager_has_command(uintptr_t base, void *target, const char *name) {
@@ -316,7 +358,7 @@ void unit_inspector_on_frame(void) {
 #ifndef EM4_EXPERIMENTAL_SCRIPT_RELOAD
         install_hook(base);
 #endif
-        if (!selected_entity(base, &entity, &count)) {
+        if (!selected_entity(base, &entity, &count, 8)) {
             snprintf(next.summary, sizeof(next.summary), "Selection data unavailable.");
         } else if (!count) {
             snprintf(next.summary, sizeof(next.summary), "Select a vehicle in the game.");

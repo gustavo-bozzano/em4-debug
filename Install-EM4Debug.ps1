@@ -207,8 +207,8 @@ $next.Add_Click({
         $script:selectedPath = (Resolve-Path -LiteralPath $pathBox.Text.Trim()).Path
         $installState.Text = $state.Detail
         $installRadio.Text = if ($state.Kind -eq 'Managed') {
-            'Update all EM4 Debug DLLs to version 1.0'
-        } else { 'Install EM4 Debug 1.0' }
+            'Update all EM4 Debug DLLs to version 1.1'
+        } else { 'Install EM4 Debug 1.1' }
         $installRadio.Enabled = $state.Kind -ne 'Conflict'
         $removeRadio.Enabled = $state.Kind -eq 'Managed'
         $installRadio.Checked = $installRadio.Enabled

@@ -1,3 +1,5 @@
 LIBRARY dinput8
 EXPORTS
     DirectInput8Create
+    EM4SetDirectControlInput
+    EM4DirectControlInputReady

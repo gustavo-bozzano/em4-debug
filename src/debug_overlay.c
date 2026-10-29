@@ -10,6 +10,7 @@
 #include "hot_reload.h"
 #include "unit_inspector.h"
 #include "path_viewer.h"
+#include "direct_control.h"
 
 #define HISTORY_SIZE 120
 #define LOG_CAPACITY 96
@@ -399,6 +400,7 @@ static void draw_overlay(HDC dc) {
             (style & (WS_CAPTION | WS_THICKFRAME)) ? "WINDOW" : "NO BORDER",
             (unsigned long long)((GetTickCount64() - started_at) / 1000));
         draw_text(18, 116, line, width);
+        draw_text(18, 148, "Ctrl+F8: WASD control and camera follow for one unit", width);
         draw_text(18, 170, "Ctrl+F10: cycle diagnostics, inspector, and map paths", width);
         draw_text(18, 192, "F11: toggle window mode", width);
     } else if (current_page == 1) {
@@ -542,6 +544,46 @@ static void draw_path_labels(HDC dc) {
     glPopAttrib();
 }
 
+static void draw_control_badge(HDC dc, const char *message) {
+    GLint previous_matrix, viewport[4];
+    float top, right;
+    if (!prepare_font(dc)) return;
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    if (viewport[2] < 320 || viewport[3] < 100) return;
+    top = visible && page != PAGE_MAP_PATHS && viewport[3] >= 380 ? 334.0f : 8.0f;
+    right = viewport[2] < 500 ? (float)viewport[2] - 8 : 492.0f;
+    glGetIntegerv(GL_MATRIX_MODE, &previous_matrix);
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, viewport[2], viewport[3], 0, -1, 1);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.0f, 0.0f, 0.0f, 0.78f);
+    glBegin(GL_QUADS);
+    glVertex2f(8, top);
+    glVertex2f(right, top);
+    glVertex2f(right, top + 25);
+    glVertex2f(8, top + 25);
+    glEnd();
+    glColor3f(0.4f, 1.0f, 0.5f);
+    draw_text(16, top + 18, message, (unsigned)((right - 20) / 9));
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(previous_matrix);
+    glPopAttrib();
+}
+
 static BOOL WINAPI hooked_swap(HDC dc) {
     BOOL result;
     update_metrics();
@@ -549,9 +591,14 @@ static BOOL WINAPI hooked_swap(HDC dc) {
         host->log("debug", "First SwapBuffers frame observed");
     if (visible && page == PAGE_UNIT_INSPECTOR) unit_inspector_on_frame();
     if (path_viewer_is_enabled()) path_viewer_on_frame();
+    direct_control_on_frame();
     path_viewer_draw_world();
     if (path_viewer_is_enabled()) draw_path_labels(dc);
     if (visible && page != PAGE_MAP_PATHS) draw_overlay(dc);
+    {
+        const char *control_status = direct_control_status_text();
+        if (control_status) draw_control_badge(dc, control_status);
+    }
     result = real_swap(dc);
     hot_reload_on_frame();
     return result;
@@ -658,7 +705,8 @@ static DWORD WINAPI debug_worker(LPVOID unused) {
                     }
                     break;
                 case VK_F8:
-                    if (!control) {
+                    if (control) direct_control_request_toggle();
+                    else {
                         InterlockedExchange(&log_source, !log_source);
                         InterlockedExchange(&log_scroll, 0);
                     }
@@ -731,6 +779,7 @@ __declspec(dllexport) BOOL WINAPI EM4PluginInit(const EM4HostAPI *api) {
     hot_reload_init(api, executable);
     unit_inspector_init(api);
     path_viewer_init(api);
+    direct_control_init(api);
     InitializeCriticalSection(&log_lock);
     QueryPerformanceFrequency(&frequency);
     if (!frequency.QuadPart) {

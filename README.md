@@ -5,7 +5,7 @@ An experimental native plugin package for **911 First Responders / Emergency 4**
 
 ## Easy setup
 
-Download `EM4-Debug-v1.0.0-win32.zip` from [GitHub Releases](https://github.com/gustavo-bozzano/em4-debug/releases), extract the entire ZIP, and double-click **Install EM4 Debug.cmd**. The wizard looks for a Steam installation and also lets you browse to the folder containing `Em4.exe`. Close the game before applying changes. The same wizard updates an existing installation managed by EM4 Debug or removes it.
+Download `EM4-Debug-v1.1.0-win32.zip` from [GitHub Releases](https://github.com/gustavo-bozzano/em4-debug/releases), extract the entire ZIP, and double-click **Install EM4 Debug.cmd**. The wizard looks for a Steam installation and also lets you browse to the folder containing `Em4.exe`. Close the game before applying changes. The same wizard updates an existing installation managed by EM4 Debug or removes it.
 
 The release package includes prebuilt 32-bit DLLs, so Zig is not needed to install it. The command-script reload feature is enabled in the release DLL and remains experimental. Test script edits in a session you can afford to restart. The package does not change `em4.cfg` or install a multiplayer player-count patch.
 
@@ -15,6 +15,7 @@ The release package includes prebuilt 32-bit DLLs, so Zig is not needed to insta
 | --- | --- |
 | **Ctrl + F6** | Retry the last changed texture or model. If `EM4Plugins\reload_target.txt` names a resource, try that one instead. A manual model target needs a prior file change so the watcher knows its physical path. |
 | **Ctrl + F7** | In the command reload build, recompile the last changed `Game/Command` script. In the default build, show the disabled status. |
+| **Ctrl + F8** | Toggle WASD control and a third-person chase camera for one selected vehicle or person. Esc or Enter also turns it off. |
 | **F6** | Save `EM4Plugins\debug_snapshot.txt` with performance, graphics, and recent log information. |
 | **F7** | On the Logs page, switch between all lines and likely issues. |
 | **F8** | On the Logs page, switch between the game's `logfile.txt` and the plugin loader log. |
@@ -42,6 +43,14 @@ Select a vehicle in the game and open **Unit Inspector** with **Ctrl + F10**. Th
 To investigate a command that is missing entirely, create `EM4Plugins/inspect_command.txt` in the game folder and put the command name on its first line, for example `VCmdTeste`. The page then reports whether the name is attached to the selected vehicle, registered in the command manager but not attached, or absent from the manager. The file is optional and can be edited while the game runs; the inspector reads it again within one second.
 
 `CheckPossible denied` means the engine's command availability check returned false for that vehicle during the last ten seconds. `Not checked recently` means the inspector has no recent result; it does not prove the command is unavailable. `Different manager instance` identifies an attached command whose name currently resolves to another native object. An attached, available command can still be hidden by other UI logic. The inspector reports the observed layer and does not claim to know every UI filtering rule. Inspection is read-only and works only with the verified Steam `Em4.exe` build.
+
+## Control a selected unit with WASD
+
+Select exactly one vehicle or person in a loaded scene and press **Ctrl + F8**. While the game has focus, hold **W**, **A**, **S**, or **D** to move the unit relative to the chase camera. Diagonal combinations work as well. Vehicles use continuous direct movement after a brief native heading calibration. People use the game's native movement action. Releasing the keys stops the unit. The camera follows from behind and above, with position and heading smoothing. The proxy filters WASD from the game's DirectInput keyboard state during control so the keys do not move the camera separately. **Ctrl + F8**, **Esc**, or **Enter** leaves control mode and restores the previous view. The mode stops the unit when you switch to another application or select a different unit.
+
+Vehicle movement changes position and rotation through the game's native methods. It depends on the invisible `mod:Prototypes/Objects/Misc/empty.e4p` helper; if that prototype cannot be created, the controller falls back to movement actions that may brake between destinations. Control replaces the unit's current actions while active. It is off by default and restricted to the verified Steam executable and Vision camera build. It has been tested in single-player with the Blumenau mod; multiplayer synchronization has not been validated. This feature requires both the updated `dinput8.dll` and `em4_debug.dll`.
+
+WASD control is included in the v1.1.0 release ZIP. Close the game before upgrading from v1.0.0 so the setup wizard can replace both the input proxy and debug DLL.
 
 ## View map paths
 ![Map paths](./images/map_paths.png)
@@ -147,10 +156,12 @@ src/debug_overlay.c       OpenGL menu, log viewer, snapshot, and hotkeys
 src/hot_reload.c          Resource matching and runtime reload
 src/unit_inspector.c      Selected vehicle commands and availability checks
 src/path_viewer.c         Live map route inventory and drawing
+src/direct_control.c      Selected unit WASD movement and native camera follow
 src/auto_watch.c          Windows file change notifications for Data and Mods
 include/hot_reload.h      Hot reload interface for the menu
 include/unit_inspector.h  Unit Inspector data interface
 include/path_viewer.h     Route viewer interface
+include/direct_control.h  WASD control interface
 examples/reload_target.txt  Editable resource path template
 src/borderless.c          Window-mode toggle and F11 handler
 src/*.def                Explicit DLL exports

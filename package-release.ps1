@@ -1,5 +1,5 @@
 param(
-    [string]$Version = '1.0.0',
+    [string]$Version = '1.1.0',
     [string]$ZigPath = 'zig',
     [switch]$SkipBuild
 )
@@ -32,6 +32,15 @@ if ($debugText.Contains('Multi-pass bloom ready') -or
 }
 if (-not $debugText.Contains('Ctrl+F7 command script reload')) {
     throw 'The release debug DLL is missing command-script reload.'
+}
+if (-not $debugText.Contains('Ctrl+F8 toggles WASD control')) {
+    throw 'The release debug DLL is missing WASD control.'
+}
+$proxyBytes = [IO.File]::ReadAllBytes((Join-Path $root 'build\dinput8.dll'))
+$proxyText = [Text.Encoding]::ASCII.GetString($proxyBytes)
+if (-not $proxyText.Contains('EM4SetDirectControlInput') -or
+    -not $proxyText.Contains('EM4DirectControlInputReady')) {
+    throw 'The release input proxy is missing the WASD input filter.'
 }
 
 New-Item -ItemType Directory -Path $dist -Force | Out-Null

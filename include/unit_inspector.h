@@ -25,5 +25,9 @@ void unit_inspector_init(const EM4HostAPI *host);
 void unit_inspector_on_frame(void);
 void unit_inspector_observe(void *command, void *actor, unsigned char possible);
 void unit_inspector_copy(UnitInspectorSnapshot *out);
+int unit_inspector_selected_vehicle(void **vehicle, float position[3]);
+int unit_inspector_vehicle_valid(void *vehicle);
+int unit_inspector_selected_unit(void **unit, float position[3]);
+int unit_inspector_entity_valid(void *entity, unsigned allowed_types);
 
 #endif
